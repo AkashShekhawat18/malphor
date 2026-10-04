@@ -167,5 +167,5 @@ Contributions are what make the open-source community such an amazing place to l
 ---
 
 <div align="center">
-  <p>Built with ❤️ by the CampusMind Team.</p>
+  <p>Built with ❤️ by the Debug Thugs Team.</p>
 </div>
