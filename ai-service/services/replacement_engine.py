@@ -9,12 +9,23 @@ from reportlab.lib.styles import getSampleStyleSheet
 import io
 
 def get_groq_client():
+    use_ollama = os.environ.get("USE_OLLAMA", "false").lower() == "true"
+    if use_ollama:
+        from openai import OpenAI
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        return OpenAI(api_key="ollama", base_url=f"{ollama_url}/v1")
+    
     keys = os.environ.get("GROQ_API_KEYS", "")
     key_list = [k.strip() for k in keys.split(",") if k.strip()]
     if not key_list:
         raise ValueError("GROQ_API_KEYS not configured")
     api_key = random.choice(key_list)
     return Groq(api_key=api_key)
+
+def get_model_name():
+    if os.environ.get("USE_OLLAMA", "false").lower() == "true":
+        return os.environ.get("OLLAMA_MODEL", "qwen3:1.7b")
+    return "qwen/qwen3.8-27b"
 
 def generate_question_replacement(original_question: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -56,7 +67,7 @@ def generate_question_replacement(original_question: Dict[str, Any]) -> Dict[str
     try:
         res = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="openai/gpt-oss-20b",
+            model=get_model_name(),
             response_format={"type": "json_object"},
             temperature=0.7
         )

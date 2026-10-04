@@ -1,4 +1,4 @@
-﻿from typing import Optional
+from typing import Optional
 import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKeyConstraint, Index, Integer, REAL, Table, Text, text

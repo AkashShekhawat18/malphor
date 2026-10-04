@@ -12,12 +12,23 @@ from services.vector_service import search_global_pyq
 from services.embedding_service import get_embeddings
 
 def get_groq_client():
+    use_ollama = os.environ.get("USE_OLLAMA", "false").lower() == "true"
+    if use_ollama:
+        from openai import OpenAI
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        return OpenAI(api_key="ollama", base_url=f"{ollama_url}/v1")
+    
     keys = os.environ.get("GROQ_API_KEYS", "")
     key_list = [k.strip() for k in keys.split(",") if k.strip()]
     if not key_list:
         raise ValueError("GROQ_API_KEYS not configured")
     api_key = random.choice(key_list)
     return Groq(api_key=api_key)
+
+def get_model_name():
+    if os.environ.get("USE_OLLAMA", "false").lower() == "true":
+        return os.environ.get("OLLAMA_MODEL", "qwen3:1.7b")
+    return "qwen/qwen3.8-27b"
 
 async def stream_pyq_chat(
     user_message: str, 
@@ -108,7 +119,7 @@ async def stream_pyq_chat(
     def generate():
         try:
             stream = client.chat.completions.create(
-                model="openai/gpt-oss-20b",
+                model=get_model_name(),
                 messages=messages,
                 temperature=0.3,
                 stream=True

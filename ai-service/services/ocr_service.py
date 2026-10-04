@@ -82,7 +82,7 @@ def extract_text_with_vision_api(image_bytes: bytes, mime_type: str = "image/jpe
             client = Groq(api_key=random.choice(key_list))
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
 
-            for groq_model in ["qwen/qwen3.6-27b", "qwen/qwen3.6-27b"]:
+            for groq_model in ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview"]:
                 try:
                     res = client.chat.completions.create(
                         messages=[

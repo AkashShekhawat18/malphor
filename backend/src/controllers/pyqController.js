@@ -28,18 +28,18 @@ const uploadToCloudinary = (buffer, originalname) => {
   });
 };
 
-exports.uploadPYQ = async (req, res) => {
+exports.extractForPreview = async (req, res) => {
   try {
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
     
-    // 1. Upload file to Cloudinary
+    // 1. Upload to Cloudinary (need to store it somewhere for the eventual record)
     const uploadResult = await uploadToCloudinary(file.buffer, file.originalname);
     const publicUrl = uploadResult.secure_url;
     
-    // 2. Call AI Service for extraction
+    // 2. Call AI Service to purely EXTRACT questions
     const form = new FormData();
-    form.append('file', file.buffer, file.originalname);
+    form.append('file', file.buffer, { filename: file.originalname });
     
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/api/ai/pyq/extract`, form, {
       headers: { ...form.getHeaders() }
@@ -47,74 +47,59 @@ exports.uploadPYQ = async (req, res) => {
     
     const questions = aiResponse.data.questions || [];
     
-    // 3. AI Auto Classification
+    res.status(200).json({
+      fileUrl: publicUrl,
+      originalFileName: file.originalname,
+      questions: questions
+    });
+  } catch (error) {
+    console.error('Extract For Preview Error:', error);
+    res.status(500).json({ error: 'Failed to extract questions' });
+  }
+};
+
+exports.savePreviewedPaper = async (req, res) => {
+  try {
+    const { 
+      title, subjectName, courseCode, semester, academicYear, examType, 
+      fileUrl, originalFileName, questions 
+    } = req.body;
+    
+    // 1. Create Document Record
     const pyqPaper = await prisma.pYQPaper.create({
       data: {
-        title: req.body.title || 'Auto-Detected Title',
-        collegeName: req.body.collegeName || 'Unknown College',
-        subjectName: req.body.subjectName || 'Unknown Subject',
-        semester: req.body.semester ? parseInt(req.body.semester) : null,
-        examType: req.body.examType || null,
-        year: req.body.year ? parseInt(req.body.year) : new Date().getFullYear(),
-        fileUrl: publicUrl,
-        originalFileName: file.originalname,
+        title: title || originalFileName || 'Untitled Paper',
+        subjectName: subjectName || 'Unknown Subject',
+        semester: semester ? parseInt(semester) : null,
+        examType: examType || null,
+        year: academicYear ? parseInt(academicYear) : new Date().getFullYear(),
+        fileUrl: fileUrl,
+        originalFileName: originalFileName,
         uploadedById: req.user.id,
         isProcessed: true,
         status: 'COMPLETED'
       }
     });
     
-    // 4. Save extracted questions
-    const questionPromises = questions.map(q => {
-      const imagesData = (q.images || []).filter(img => img.url).map(img => ({
-        imageUrl: img.url,
-        caption: img.description || img.type
-      }));
-
+    // 2. Save extracted questions
+    const questionPromises = (questions || []).map(q => {
       return prisma.pYQQuestion.create({
         data: {
           paperId: pyqPaper.id,
           questionNumber: q.questionNumber,
           questionText: q.questionText,
           marks: q.marks,
-          topic: q.topic,
-          subParts: q.subParts,
-          latex: q.latex,
-          diagramContext: q.diagramContext,
-          images: {
-            create: imagesData
-          },
-          metadata: q.metadata ? {
-            create: {
-              concept: q.metadata.concept,
-              subconcept: q.metadata.subconcept,
-              questionIntent: q.metadata.questionIntent,
-              requiredFormula: q.metadata.requiredFormula,
-              solvingMethod: q.metadata.solvingMethod,
-              difficulty: q.metadata.difficulty,
-              logic: q.metadata.logic
-            }
-          } : undefined
+          topic: q.topic || null
         }
       });
     });
     
     await Promise.all(questionPromises);
     
-    // 5. Index into Vector DB
-    try {
-      await axios.post(`${AI_SERVICE_URL}/api/ai/pyq/index`, {
-        paperId: pyqPaper.id,
-        questions: questions
-      });
-    } catch (indexError) {
-      console.error('Failed to index PYQ to vector DB:', indexError);
-    }
-    
-    res.status(201).json({ message: 'PYQ Uploaded and Processed successfully', paperId: pyqPaper.id });
+    res.status(201).json({ message: 'PYQ saved successfully', paperId: pyqPaper.id });
   } catch (error) {
-    console.error('PYQ Upload Error:', error);
-    res.status(500).json({ error: 'Failed to process PYQ' });
+    console.error('Save Previewed Paper Error:', error);
+    res.status(500).json({ error: 'Failed to save paper and questions' });
   }
 };
 
@@ -131,7 +116,7 @@ exports.getPYQLibrary = async (req, res) => {
           select: { questions: true }
         }
       },
-      orderBy: { year: 'desc' }
+      orderBy: { createdAt: 'desc' }
     });
     
     res.status(200).json(papers);
@@ -420,6 +405,90 @@ exports.analyzeCurrentPaperSSE = async (req, res) => {
     sendEvent('DB_SAVE_STARTED');
     let historyRecord;
     try {
+      // 1. Save to PYQPaper
+      const pyqPaper = await prisma.pYQPaper.create({
+        data: {
+          title: req.body.title || file.originalname || 'Auto-Detected Title',
+          collegeName: req.body.collegeName || 'Unknown College',
+          subjectName: req.body.subjectName || 'Unknown Subject',
+          semester: req.body.semester ? parseInt(req.body.semester) : null,
+          examType: req.body.examType || null,
+          year: req.body.year ? parseInt(req.body.year) : new Date().getFullYear(),
+          fileUrl: publicUrl,
+          originalFileName: file.originalname,
+          uploadedById: req.user.id,
+          isProcessed: true,
+          status: 'COMPLETED'
+        }
+      });
+      
+      // 2. Save questions
+      const questionIdMap = {}; // mapping from python extraction id (if any) or index to actual db id
+      const questionPromises = currentQuestions.map(async (q, idx) => {
+        const imagesData = (q.images || []).filter(img => img.url).map(img => ({
+          imageUrl: img.url,
+          caption: img.description || img.type
+        }));
+
+        const dbQuestion = await prisma.pYQQuestion.create({
+          data: {
+            paperId: pyqPaper.id,
+            questionNumber: q.questionNumber,
+            questionText: q.questionText,
+            marks: q.marks,
+            topic: q.topic,
+            subParts: q.subParts,
+            latex: q.latex,
+            diagramContext: q.diagramContext,
+            images: {
+              create: imagesData
+            },
+            metadata: q.metadata ? {
+              create: {
+                concept: q.metadata.concept,
+                subconcept: q.metadata.subconcept,
+                questionIntent: q.metadata.questionIntent,
+                requiredFormula: q.metadata.requiredFormula,
+                solvingMethod: q.metadata.solvingMethod,
+                difficulty: q.metadata.difficulty,
+                logic: q.metadata.logic
+              }
+            } : undefined
+          }
+        });
+        questionIdMap[q.id || String(idx)] = dbQuestion.id;
+        // Assign the new db id back to the object so similarity matching uses it
+        q.id = dbQuestion.id;
+        return dbQuestion;
+      });
+      
+      await Promise.all(questionPromises);
+
+      // 3. Save Similarity Reports
+      if (simData && simData.similarityResults) {
+        const simPromises = simData.similarityResults.map(async (sim) => {
+          if (sim.targetQuestionId) {
+             // ensure it's not trying to save a string to an int column, etc. targetQuestionId should be valid string UUID
+             await prisma.pYQSimilarityReport.create({
+               data: {
+                 sourceQuestionId: questionIdMap[sim.sourceQuestionId] || sim.sourceQuestionId || questionIdMap[String(simData.similarityResults.indexOf(sim))],
+                 targetQuestionId: sim.targetQuestionId,
+                 conceptMatch: sim.conceptMatch,
+                 logicMatch: sim.logicMatch,
+                 formulaMatch: sim.formulaMatch,
+                 patternMatch: sim.patternMatch,
+                 valuesMatch: sim.valuesMatch,
+                 languageSimilarity: sim.languageSimilarity,
+                 overallSimilarity: sim.overallSimilarity,
+                 matchType: sim.matchType,
+                 reasoning: sim.reasoning
+               }
+             });
+          }
+        });
+        await Promise.all(simPromises);
+      }
+
       historyRecord = await prisma.pYQAnalysisHistory.create({
         data: {
           userId: req.user.id,

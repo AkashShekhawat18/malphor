@@ -89,10 +89,7 @@ export function AnalysisHistory({ history, loading, onOpen, onDelete, isDark }: 
               >
                 <div className="flex-1 pr-4">
                   <h4 className="font-bold text-lg mb-2 truncate pr-8 group-hover:text-emerald-500 transition-colors">{item.title}</h4>
-                  <div className={`flex flex-wrap gap-4 text-xs font-medium opacity-60`}>
-                    <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/> {new Date(item.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
-                    <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/> {new Date(item.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  </div>
+
                 </div>
                 
                 <div className="mt-4 sm:mt-0 flex items-center justify-between sm:justify-end w-full sm:w-auto gap-6">

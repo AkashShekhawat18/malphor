@@ -144,7 +144,7 @@ ${WEBSITE_KB_TEXT}
       const groq = new Groq({ apiKey: keys[currentKeyIndex] });
       const completion = await groq.chat.completions.create({
         messages,
-        model: "openai/gpt-oss-20b",
+        model: "qwen/qwen3.8-27b",
         temperature: 0.6,
         max_tokens: 1200,
       });
@@ -155,8 +155,8 @@ ${WEBSITE_KB_TEXT}
         mode: isWebsiteQuery ? 'WEBSITE_LLM' : 'ACADEMIC_AI'
       };
     } catch (err) {
-      if (err.status === 429) {
-        console.log(`Malphor Groq rate limit on key index ${currentKeyIndex}. Rotating...`);
+      if (err.status === 429 || err.status === 401 || err.status === 403) {
+        console.log(`Malphor Groq API error (${err.status}) on key index ${currentKeyIndex}. Rotating...`);
         currentKeyIndex = (currentKeyIndex + 1) % keys.length;
         attempts++;
         continue;
@@ -167,7 +167,7 @@ ${WEBSITE_KB_TEXT}
   }
 
   return {
-    reply: "⚠️ Malphor AI service is temporarily unavailable due to API rate limits. Please try again shortly.",
+    reply: "⚠️ Malphor AI service is temporarily unavailable due to API rate limits or invalid API keys. Please check backend/.env or try again shortly.",
     mode: isWebsiteQuery ? 'WEBSITE_LLM' : 'ACADEMIC_AI'
   };
 };

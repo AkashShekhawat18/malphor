@@ -56,12 +56,23 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def get_groq_client():
+    use_ollama = os.environ.get("USE_OLLAMA", "false").lower() == "true"
+    if use_ollama:
+        from openai import OpenAI
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        return OpenAI(api_key="ollama", base_url=f"{ollama_url}/v1")
+    
     keys = os.environ.get("GROQ_API_KEYS", "")
     key_list = [k.strip() for k in keys.split(",") if k.strip()]
     if not key_list:
         raise ValueError("GROQ_API_KEYS not configured")
     api_key = random.choice(key_list)
     return Groq(api_key=api_key)
+
+def get_model_name():
+    if os.environ.get("USE_OLLAMA", "false").lower() == "true":
+        return os.environ.get("OLLAMA_MODEL", "qwen3:1.7b")
+    return "qwen/qwen3.8-27b"
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +108,7 @@ def deep_question_understanding(question: Dict[str, Any]) -> Dict[str, Any]:
     try:
         res = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="openai/gpt-oss-20b",
+            model=get_model_name(),
             response_format={"type": "json_object"},
             temperature=0.1
         )
@@ -384,23 +395,9 @@ async def process_pyq_document(file_bytes: bytes, filename: str, mime_type: str)
         if not q.get("id"):
             q["id"] = str(uuid.uuid4())
             
-        # Generate Deep Fingerprint (same as original)
-        fingerprint = deep_question_understanding(q)
-        q["metadata"] = fingerprint
-        
-        # Generate Embeddings (same as original)
-        image_desc = ""
-        for img in q.get("images", []):
-            if img.get("description"):
-                image_desc += f"\nVisual Element ({img.get('type')}): {img['description']}"
-                
-        embed_text = f"Question: {q.get('questionText')} \nConcept: {fingerprint.get('concept')} \nLogic: {fingerprint.get('logic')} {image_desc}"
-        
-        emb_list = get_embeddings([embed_text])
-        if emb_list and len(emb_list) > 0:
-            q["embedding"] = emb_list[0]
-        else:
-            q["embedding"] = []
+        # STEP 1 REQUIREMENT: No AI metadata extraction or embeddings.
+        q["metadata"] = {}
+        q["embedding"] = []
             
         processed_questions.append(q)
         
@@ -454,43 +451,10 @@ async def process_pyq_document_stream(file_bytes: bytes, filename: str, mime_typ
                 })
                 return
 
-            # --- Stage: Deep Fingerprinting (parallel) ---
-            await progress_queue.put({"event": "progress", "stage": "QUESTION_EXTRACTION_STARTED"})
-
-            CONCURRENCY_LIMIT = 10
-            semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
-
-            async def fingerprint_question(q):
-                async with semaphore:
-                    return await asyncio.to_thread(deep_question_understanding, q)
-
-            fingerprints = await asyncio.gather(*[fingerprint_question(q) for q in valid_questions])
-
-            for q, fingerprint in zip(valid_questions, fingerprints):
-                q["metadata"] = fingerprint
-
-            await progress_queue.put({"event": "progress", "stage": "QUESTION_EXTRACTION_COMPLETED"})
-
-            # --- Stage: Embedding (single batch) ---
-            await progress_queue.put({"event": "progress", "stage": "EMBEDDING_STARTED"})
-
-            embed_texts = []
+            # STEP 1 REQUIREMENT: No AI metadata extraction or embeddings.
             for q in valid_questions:
-                fingerprint = q.get("metadata", {})
-                image_desc = ""
-                for img in q.get("images", []):
-                    if img.get("description"):
-                        image_desc += f"\nVisual Element ({img.get('type')}): {img['description']}"
-                embed_text = f"Question: {q.get('questionText')} \nConcept: {fingerprint.get('concept')} \nLogic: {fingerprint.get('logic')} {image_desc}"
-                embed_texts.append(embed_text)
-
-            all_embeddings = await asyncio.to_thread(get_embeddings, embed_texts)
-
-            for i, q in enumerate(valid_questions):
-                if all_embeddings and i < len(all_embeddings):
-                    q["embedding"] = all_embeddings[i]
-                else:
-                    q["embedding"] = []
+                q["metadata"] = {}
+                q["embedding"] = []
 
             await progress_queue.put({"event": "progress", "stage": "EMBEDDING_COMPLETED"})
 

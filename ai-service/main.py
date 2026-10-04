@@ -19,6 +19,7 @@ from services.replacement_engine import generate_question_replacement, generate_
 from services.pyq_chat import stream_pyq_chat
 from services.vector_service import delete_collection_for_user, store_global_pyq_chunks
 from services.embedding_service import get_embeddings
+from services.simple_extractor import extract_questions_simple
 from fastapi.responses import Response
 
 
@@ -102,24 +103,10 @@ async def extract_pyq(file: UploadFile = File(...), stream: bool = False):
         file_bytes = await file.read()
 
         if stream:
-            # Return streaming NDJSON progress events
-            async def event_generator():
-                try:
-                    async for chunk in process_pyq_document_stream(file_bytes, file.filename, file.content_type):
-                        yield chunk
-                except Exception as stream_err:
-                    import json as _json
-                    logger.error(f"PYQ Stream Error: {stream_err}", exc_info=True)
-                    yield _json.dumps({"event": "error", "message": str(stream_err)}) + "\n"
+            # We don't support streaming for the simple extractor (it's instant anyway)
+            pass
 
-            from starlette.responses import StreamingResponse as StarletteStreamingResponse
-            return StarletteStreamingResponse(
-                event_generator(),
-                media_type="application/x-ndjson",
-                headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-cache"}
-            )
-
-        questions = await process_pyq_document(file_bytes, file.filename, file.content_type)
+        questions = extract_questions_simple(file_bytes, file.filename)
         return {"status": "success", "questions": questions}
     except Exception as e:
         logger.error(f"PYQ Extraction Error: {e}", exc_info=True)

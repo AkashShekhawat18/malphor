@@ -16,9 +16,19 @@ router.use(protect);
 
 // PYQ Library endpoints
 router.get('/debug-db', (req, res) => res.json({ db: process.env.DATABASE_URL }));
-router.post('/upload', upload.single('file'), pyqController.uploadPYQ);
+router.post('/upload', upload.single('file'), pyqController.extractForPreview);
+router.post('/save', pyqController.savePreviewedPaper);
 router.get('/library', pyqController.getPYQLibrary);
 router.delete('/library/:id', pyqController.deletePYQ);
+
+// PYQ Analytics endpoints
+const pyqAnalyticsController = require('../controllers/pyqAnalyticsController');
+router.get('/analytics', pyqAnalyticsController.getAnalytics);
+router.get('/analytics/year-analysis', pyqAnalyticsController.getYearAnalysis);
+router.get('/analytics/most-repeated-questions', pyqAnalyticsController.getMostRepeatedQuestions);
+router.get('/analytics/most-repeated-concepts', pyqAnalyticsController.getMostRepeatedConcepts);
+router.get('/analytics/topic-analysis', pyqAnalyticsController.getTopicAnalysis);
+router.get('/analytics/search', pyqAnalyticsController.search);
 
 // Current Paper Analyzer endpoints (Should be restricted to teachers, but using basic protect for now)
 router.post('/analyze', upload.single('file'), pyqController.analyzeCurrentPaper);

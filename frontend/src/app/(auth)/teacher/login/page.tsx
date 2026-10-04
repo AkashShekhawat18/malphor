@@ -33,7 +33,13 @@ export default function TeacherLogin() {
         body: JSON.stringify({ email, password })
       });
 
-      const data = await res.json();
+      let data;
+      const textResponse = await res.text();
+      try {
+        data = JSON.parse(textResponse);
+      } catch (e) {
+        throw new Error(`Server error: ${textResponse.slice(0, 50)}`);
+      }
 
       if (!res.ok) {
         setError(data.error || 'Login failed');
@@ -83,8 +89,14 @@ export default function TeacherLogin() {
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Google Login failed');
+      let data;
+      const textResponse = await res.text();
+      try {
+        data = JSON.parse(textResponse);
+      } catch (e) {
+        throw new Error(`Server error: ${textResponse.slice(0, 50)}`);
+      }
+      if (!res.ok) throw new Error(data?.error || 'Google Login failed');
 
       if (data.requirePasswordChange) {
         setRequirePasswordChange(true);
@@ -129,8 +141,14 @@ export default function TeacherLogin() {
         body: JSON.stringify({ newPassword })
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Password change failed');
+      let data;
+      const textResponse = await res.text();
+      try {
+        data = JSON.parse(textResponse);
+      } catch (e) {
+        throw new Error(`Server error: ${textResponse.slice(0, 50)}`);
+      }
+      if (!res.ok) throw new Error(data?.error || 'Password change failed');
 
       localStorage.setItem('teacherToken', data.token);
       localStorage.setItem('teacherName', data.name);
@@ -157,7 +175,7 @@ export default function TeacherLogin() {
 
       {/* Demo credentials hint */}
       <div className="mb-6 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
-        <strong>Demo Account:</strong> teacher@malphor.ai / teacher123
+        <strong>Demo Account:</strong> teacher@campusmind.ai / teacher123
       </div>
 
       {error && (
